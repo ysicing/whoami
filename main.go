@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -55,12 +56,26 @@ type WhoAmIResponse struct {
 	Timestamp   string                 `json:"timestamp"`
 }
 
+type WhoAmIDetailResponse struct {
+	Headers   map[string][]string `json:"headers"`
+	ClientIP  string              `json:"client_ip"`
+	RemoteIP  string              `json:"remote_ip"`
+	PodIP     string              `json:"pod_ip,omitempty"`
+	HostIP    string              `json:"host_ip,omitempty"`
+	Hostname  string              `json:"hostname"`
+	Method    string              `json:"method"`
+	Path      string              `json:"path"`
+	Protocol  string              `json:"protocol"`
+	Timestamp string              `json:"timestamp"`
+}
+
 func main() {
 	port := getEnv("PORT", "8080")
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", handleWhoAmI)
+	mux.HandleFunc("/whoami", handleWhoAmIDetail)
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/envs", handleEnvs)
 	mux.HandleFunc("/cm", handleConfigMaps)
@@ -137,6 +152,50 @@ func handleReadyz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleWhoAmIDetail(w http.ResponseWriter, r *http.Request) {
+	hostname, _ := os.Hostname()
+
+	// 获取客户端 IP
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = strings.Split(forwarded, ",")[0]
+	} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		clientIP = realIP
+	}
+
+	response := WhoAmIDetailResponse{
+		Headers:   r.Header,
+		ClientIP:  strings.TrimSpace(clientIP),
+		RemoteIP:  r.RemoteAddr,
+		PodIP:     getLocalIP(),
+		HostIP:    os.Getenv("HOST_IP"),
+		Hostname:  hostname,
+		Method:    r.Method,
+		Path:      r.URL.Path,
+		Protocol:  r.Proto,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
 
 func getVersionInfo() VersionInfo {

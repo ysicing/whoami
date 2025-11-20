@@ -1,0 +1,144 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: whoami
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whoami-config
+  namespace: whoami
+data:
+  app.conf: |
+    # Application configuration
+    environment=production
+    debug=false
+  database.conf: |
+    host=localhost
+    port=5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami
+  namespace: whoami
+  labels:
+    app: whoami
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: whoami
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: whoami
+  labels:
+    app: whoami
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: whoami
+  template:
+    metadata:
+      labels:
+        app: whoami
+    spec:
+      containers:
+      - name: whoami
+        image: ghcr.io/ysicing/whoami:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        # Pod 信息
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        # 资源信息
+        - name: CPU_REQUEST
+          valueFrom:
+            resourceFieldRef:
+              containerName: whoami
+              resource: requests.cpu
+        - name: CPU_LIMIT
+          valueFrom:
+            resourceFieldRef:
+              containerName: whoami
+              resource: limits.cpu
+        - name: MEM_REQUEST
+          valueFrom:
+            resourceFieldRef:
+              containerName: whoami
+              resource: requests.memory
+        - name: MEM_LIMIT
+          valueFrom:
+            resourceFieldRef:
+              containerName: whoami
+              resource: limits.memory
+        # 自定义环境变量（仅 GAEA 开头的环境变量会被展示）
+        - name: GAEA_ENV
+          value: "production"
+        - name: GAEA_REGION
+          value: "us-west-1"
+        - name: GAEA_CLUSTER
+          value: "k8s-prod-01"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: whoami-config

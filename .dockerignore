@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+whoami
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*.test
+*.out
+coverage.out
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+*.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Kubernetes
+k8s/
+*.yaml
+*.yml
